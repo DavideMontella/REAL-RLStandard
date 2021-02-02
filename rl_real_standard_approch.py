@@ -248,13 +248,13 @@ class RLREALRobotEnv(REALRobotEnv):
 
         if self.action_type == "joints":
 
+            observation = self.super_step({'joint_command': action, 'render': render})
+
             if self.slowed_actions:
                 actions_len = 49
                 actions = np.linspace(observation[0]['joint_positions'], action, actions_len)
                 for i in range(actions_len):
                     observation = self.super_step({'joint_command': actions[i], 'render': render})
-
-            observation = self.super_step({'joint_command': action, 'render': render})
 
             joints_position = observation[0]['joint_positions']
 
