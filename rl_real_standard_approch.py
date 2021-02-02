@@ -37,11 +37,11 @@ from tf_agents.train.utils import train_utils
 
 tempdir = tempfile.gettempdir()
 
-import numpy as np 
+import numpy as np
 import tf_agents
 import real_robots
 from real_robots.envs import REALRobotEnv
-import gym 
+import gym
 from tf_agents.environments import gym_wrapper
 
 import IPython
@@ -88,6 +88,7 @@ class RandomExploreAgent():
 import time
 import cv2
 seed = np.random.randint(10000)
+path_save_folder = "Simulation_attractive_reward_joints_5obs"
 
 '''
 args:
@@ -107,7 +108,7 @@ def VideoDecorator(real_env, jump_size):
         def step(self, action):
             if self.real_env.timestep == 0:
                 time_string = time.strftime("%Y,%m,%d,%H,%M").split(',')
-                filename = "Simulation_pos_reward_macro_action_true/Simulation-{}-y{}-m{}-d{}-h{}-m{}-eps{}.avi".format(seed, *time_string, self.real_env.episode)
+                filename = path_save_folder + "/Simulation-{}-y{}-m{}-d{}-h{}-m{}-eps{}.avi".format(seed, *time_string, self.real_env.episode)
 
                 if self.video_maker is not None:
                     cv2.destroyAllWindows()
@@ -163,7 +164,7 @@ def DataCollectorDecorator(real_env, episodes):
             if attr_name == 'reset':
                 if self.episode % self.episodes == 0:
                     time_string = time.strftime("%Y,%m,%d,%H,%M").split(',')
-                    filename = "Simulation_pos_reward_macro_action_true/Simulation_data-{}".format(seed)
+                    filename = path_save_folder + "/Simulation_data-{}".format(seed)
                     np.savez_compressed(filename, self.data)
 
                 if self.episode == len(self.data):
@@ -181,13 +182,20 @@ def DataCollectorDecorator(real_env, episodes):
 
     return DataCollectorWrapperREAL()
 
+'''
+args:
+    timesteps: episodes length
+    goal: istance real_robots.envs.Goal
+    joints_observations_history_length: if the value is 2, then the observations has the current joints position and the last joints position
+    **kwargs: args for the REALRobotEnv
+'''
 class RLREALRobotEnv(REALRobotEnv):
-    def __init__(self, rewards=None, timesteps=1000, goal=None, **kwargs):
+    def __init__(self, timesteps=1000, goal=None, joints_observations_history_length=5, slowed_actions=True, **kwargs):
         super().__init__(**kwargs)
 
         self.action_type = kwargs["action_type"]
 
-        assert goal != None
+        assert goal != None, "Forgot to give the goal istance in the class args"
         self.goal = goal
 
         self.timesteps = timesteps
@@ -196,13 +204,20 @@ class RLREALRobotEnv(REALRobotEnv):
                                       np.finfo(np.float32).max,
                                       np.finfo(np.float32).max]*kwargs['objects'])
 
+
         if self.action_type == "joints":
+
+            self.joints_observations_history_length = max(joints_observations_history_length, 1)
+
             self.action_space = gym.spaces.Box(low=self.action_space['joint_command'].low,
                                            high=self.action_space['joint_command'].high,
                                            dtype=np.float32)
 
-            self.observation_space = gym.spaces.Box(low=np.concatenate([self.action_space.low, -high]),
-                                           high=np.concatenate([self.action_space.high, high]),
+            joints_history_space_low = list(self.action_space.low) * self.joints_observations_history_length
+            joints_history_space_high = list(self.action_space.high) * self.joints_observations_history_length
+
+            self.observation_space = gym.spaces.Box(low=np.concatenate([joints_history_space_low, -high]),
+                                           high=np.concatenate([joints_history_space_high, high]),
                                            dtype=np.float32)
         else:
             self.action_space = gym.spaces.Box(low=self.action_space['macro_action'].low.flatten(),
@@ -212,12 +227,11 @@ class RLREALRobotEnv(REALRobotEnv):
             self.observation_space = gym.spaces.Box(low=-high, high=high, dtype=np.float32)
 
 
-        print("##########OBSERVATION############")
+        print("##########OBSERVATIONS SPACE############")
         print(self.observation_space)
         print("#################################")
 
         super().reset()
-        self.old_objects_position = self.get_all_used_objects()
 
         self.super_step = self.step
         self.step = self.new_step
@@ -225,25 +239,27 @@ class RLREALRobotEnv(REALRobotEnv):
 
         self.reward_func = self.new_reward_func
 
-        self.objects_reward = {'cube':1, 'mustard':2, 'tomato':3}
-        print("Values reward: {}".format(rewards))
-
         self.episode = -1
+
+        self.slowed_actions = slowed_actions
 
 
     def new_step(self, action, render=False):
 
         if self.action_type == "joints":
-            observation = self.super_step({'joint_command': action, 'render': render})
 
-            slowed_actions = True
-            if slowed_actions:
-                actions = np.linspace(observation[0]['joint_positions'], action, 99)
-                for i in range(99):
+            if self.slowed_actions:
+                actions_len = 49
+                actions = np.linspace(observation[0]['joint_positions'], action, actions_len)
+                for i in range(actions_len):
                     observation = self.super_step({'joint_command': actions[i], 'render': render})
+
+            observation = self.super_step({'joint_command': action, 'render': render})
 
             joints_position = observation[0]['joint_positions']
 
+            self.old_obs = np.array( list(self.old_obs)[9:] + list(joints_position) )
+            joints_position = self.old_obs
         else:
             true_action = np.reshape(action,(2,2))
             for i in range(999):
@@ -267,29 +283,32 @@ class RLREALRobotEnv(REALRobotEnv):
         observation = super().reset()
         self.reset_object_pose_for_goal()
 
-        self.old_objects_position = self.get_all_used_objects()
-
+        self.old_obs = np.array( list(np.zeros(9)) * self.joints_observations_history_length )
         joints_position = observation['joint_positions']
+
+        self.old_obs = np.array( list(self.old_obs)[9:] + list(joints_position) )
+        joints_position = self.old_obs
+
         objs_position = np.concatenate([observation['object_positions'][key][:3] for key in observation['object_positions']])
+
 
         return np.concatenate([joints_position, objs_position]) if self.action_type == "joints" else objs_position
 
     def new_reward_func(self, observation):
 
         if self.timestep % 100 == 0 or self.timestep == 0:
-            print(super().evaluateGoal()[1])
-        return super().evaluateGoal()[1] 
+            print("evaluate value: {}".format(super().evaluateGoal()[1]))
+        return super().evaluateGoal()[1] - np.linalg.norm(self.robot.parts['lbr_iiwa_link_7'].get_position()-observation['object_positions']["cube"][:3])
 
-        objects_position = self.get_all_used_objects()
+        #just in case you want to try a linear reward
+        '''
         reward = 0
         for key in objects_position.keys():
-            old = self.old_objects_position[key][:2]
-            new = objects_position[key][:2]
-            reward += self.objects_reward[key] if np.linalg.norm(new-self.goal.final_state[key][:2]) <= 0.1 else 0
-            #reward += self.objects_reward[key] if np.linalg.norm(new-old) >= 0.01 else 0
+            reward += np.linalg.norm(self.goal.initial_state[key][:3]-self.goal.final_state[key][:3])
         if reward:
-            print("##########REWARD GOAL###########")
+            print("reward: {}".format(reward))
         return reward
+        '''
 
     def reset_object_pose_for_goal(self):
         for obj in self.goal.initial_state.keys():
@@ -305,10 +324,10 @@ env_name = "MinitaurBulletEnv-v0" # @param {type:"string"}
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
 # 1e5 is just so this doesn't take too long (1 hr)
-num_iterations = 40000 # @param {type:"integer"}
+num_iterations = 15000000 # @param {type:"integer"}
 
-initial_collect_steps = 10 # @param {type:"integer"}
-collect_steps_per_iteration = 1 # @param {type:"integer"}
+initial_collect_steps = 10000 # @param {type:"integer"}
+collect_steps_per_iteration = 1000 # @param {type:"integer"}
 replay_buffer_capacity = 10000 # @param {type:"integer"}
 
 batch_size = 256 # @param {type:"integer"}
@@ -327,25 +346,20 @@ critic_joint_fc_layer_params = (256, 256)
 log_interval = 20 # @param {type:"integer"}
 
 num_eval_episodes = 20 # @param {type:"integer"}
-eval_interval = 20 # @param {type:"integer"}
+eval_interval = 20000 # @param {type:"integer"}
 
-policy_save_interval = 5000 # @param {type:"integer"}
+policy_save_interval = 20000 # @param {type:"integer"}
 
 goals = np.load("goals-REAL2020-s2020-25-15-10-1.npy.npz", allow_pickle=True)
 goal_idx = 7
-goal = goals['arr_0'][goal_idx] #start position near
+goal = goals['arr_0'][goal_idx] #start position near from goal position (20 cm)
 
 
-
-c_env = RLREALRobotEnv(goal=goal, render=False, objects=1, action_type='macro_action')
-e_env = RLREALRobotEnv(goal=goal, render=False, objects=1, action_type='macro_action')
+action_type = "joints"
+c_env = RLREALRobotEnv(goal=goal, render=False, objects=1, action_type=action_type)
+e_env = RLREALRobotEnv(goal=goal, render=False, objects=1, action_type=action_type)
 e_env = DataCollectorDecorator(VideoDecorator(e_env, 100), 20)
 
-#wrapped_env = gym_wrapper.GymWrapper(env)
-
-#env = wrapped_env
-#obs = env.reset()
-#print(obs)
 
 collect_env = gym_wrapper.GymWrapper(c_env)
 eval_env = gym_wrapper.GymWrapper(e_env)
@@ -543,5 +557,5 @@ plt.plot(steps, returns)
 plt.ylabel('Average Return')
 plt.xlabel('Step')
 plt.ylim()
-plt.savefig("Simulation_pos_reward_macro_action_true/results{}_it{}".format(goal_idx, num_iterations))
+plt.savefig(path_save_folder + "/results{}_it{}".format(goal_idx, num_iterations))
 
