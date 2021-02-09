@@ -375,8 +375,8 @@ class RLREALRobotEnv(REALRobotEnv):
 action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 10000
-num_episodes = 1500
+timesteps = 1000
+num_episodes = 15000
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
 # 1e5 is just so this doesn't take too long (1 hr)
@@ -394,7 +394,7 @@ alpha_learning_rate = 3e-4 # @param {type:"number"}
 target_update_tau = 0.005 # @param {type:"number"}
 target_update_period = 1 # @param {type:"number"}
 gamma = 0.99 # @param {type:"number"}
-reward_scale_factor = 100000.0 # @param {type:"number"}
+reward_scale_factor = 1000.0 # @param {type:"number"}
 
 actor_fc_layer_params = (256, 256)
 critic_joint_fc_layer_params = (256, 256)
