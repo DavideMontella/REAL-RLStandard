@@ -394,7 +394,7 @@ alpha_learning_rate = 3e-4 # @param {type:"number"}
 target_update_tau = 0.005 # @param {type:"number"}
 target_update_period = 1 # @param {type:"number"}
 gamma = 0.99 # @param {type:"number"}
-reward_scale_factor = 1000.0 # @param {type:"number"}
+reward_scale_factor = 10000.0 # @param {type:"number"}
 
 actor_fc_layer_params = (256, 256)
 critic_joint_fc_layer_params = (256, 256)
