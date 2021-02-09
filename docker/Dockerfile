@@ -1,5 +1,5 @@
 FROM tensorflow/tensorflow:devel-gpu
-WORKDIR /root/
+WORKDIR /root/REAL-RLStandard
 RUN apt update
 RUN apt install -y git nano
 RUN touch /root/.nanorc
