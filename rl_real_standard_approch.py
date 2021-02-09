@@ -375,7 +375,7 @@ class RLREALRobotEnv(REALRobotEnv):
 action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 1000
+timesteps = 10000
 num_episodes = 1500
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
@@ -407,7 +407,7 @@ eval_interval = 100*timesteps # @param {type:"integer"}
 policy_save_interval = 20000 # @param {type:"integer"}
 
 if action_type == "macro_action":
-    num_iterations = num_episodes * (int(timesteps/1000) + 1)
+    num_iterations = num_episodes * (int(timesteps/1000))
     initial_collect_steps = int(initial_collect_steps / 1000)
 #    collect_steps_per_iteration = int(collect_steps_per_iteration / 1000)
 #    collect_steps_per_iteration += 1
@@ -430,8 +430,8 @@ goal = goals['arr_0'][goal_idx] #start position near from goal position (20 cm)
 
 c_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
 e_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
-e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
-#e_env = DataCollectorDecorator(e_env, 20)
+#e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
+e_env = DataCollectorDecorator(e_env, 20)
 
 collect_env = gym_wrapper.GymWrapper(c_env)
 eval_env = gym_wrapper.GymWrapper(e_env)
