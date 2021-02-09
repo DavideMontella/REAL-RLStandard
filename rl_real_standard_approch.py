@@ -402,7 +402,7 @@ critic_joint_fc_layer_params = (256, 256)
 log_interval = 20000 # @param {type:"integer"}
 
 num_eval_episodes = 20 # @param {type:"integer"}
-eval_interval = 20000 # @param {type:"integer"}
+eval_interval = 100*timesteps # @param {type:"integer"}
 
 policy_save_interval = 20000 # @param {type:"integer"}
 
