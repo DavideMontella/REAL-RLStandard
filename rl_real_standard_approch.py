@@ -89,6 +89,8 @@ import time
 import cv2
 seed = np.random.randint(10000)
 path_save_folder = "Simulation_pos_reward_macro_action_test"
+from pathlib import Path
+Path(path_save_folder).mkdir(parents=True, exist_ok=True)
 
 '''
 args:
