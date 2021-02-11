@@ -52,6 +52,8 @@ import PIL.Image
 
 import tensorflow as tf
 
+from tf_agents.trajectories import trajectory
+
 class RandomExploreAgent():
     def __init__(self, action_space):
         self.action_space = action_space
@@ -262,7 +264,6 @@ class RLREALRobotEnv(REALRobotEnv):
 
         self.slowed_actions = slowed_actions
 
-
     def new_step(self, action, render=False):
 
         if self.action_type == "joints":
@@ -433,8 +434,12 @@ e_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, 
 e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
 #e_env = DataCollectorDecorator(e_env, 20)
 
+
 collect_env = gym_wrapper.GymWrapper(c_env)
 eval_env = gym_wrapper.GymWrapper(e_env)
+
+collect_env.reset()
+eval_env.reset()
 
 use_gpu = True #@param {type:"boolean"}
 
@@ -528,12 +533,13 @@ rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
 
 
 
-def collector(policy, env, max_steps, observers, max_episodes=0)
+def collector(policy, env, max_steps, observers, max_episodes=0):
     max_steps = max_steps or np.inf
     max_episodes = max_episodes or np.inf
 
-    time_step = env.reset()
+    time_step = env._current_time_step
     policy_state = policy.get_initial_state(env.batch_size or 1)
+
     num_steps = 0
     num_episodes = 0
     while num_steps < max_steps and num_episodes < max_episodes:
@@ -578,11 +584,9 @@ collect_observers = list(set(collect_observers))
 
 eval_observers = [rb_observer, env_step_metric]
 eval_metrics = [
-                      py_metrics.NumberOfEpisodes(),
-                      py_metrics.EnvironmentSteps(),
-                      py_metrics.AverageReturnMetric(buffer_size=10),
-                      py_metrics.AverageEpisodeLengthMetric(buffer_size=10),
-                  ]
+                  py_metrics.AverageReturnMetric(buffer_size=1),
+                  py_metrics.AverageEpisodeLengthMetric(buffer_size=1),
+               ]
 eval_observers.extend(eval_metrics)
 
 # Make sure metrics are not repeated.
@@ -618,7 +622,7 @@ def get_eval_metrics():
   #eval_actor.run()
   collector(tf_eval_policy, eval_env, 0, eval_observers, max_episodes=num_eval_episodes)
   results = {}
-  for metric in eval_actor.metrics:
+  for metric in eval_metrics:
     results[metric.name] = metric.result()
   return results
 
