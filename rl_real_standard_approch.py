@@ -304,15 +304,10 @@ class RLREALRobotEnv(REALRobotEnv):
 #                    print("true action: {}".format(true_action))
                     observation = self.super_step({'macro_action': true_action, 'render': False})
                 observation = self.super_step({'macro_action': true_action, 'render': render})
-            else:
-                observation = self.super_step({'macro_action': true_action, 'render': render})
 
         objs_position = np.concatenate([observation[0]['object_positions'][key][:3] for key in observation[0]['object_positions']])
 
-        macro_action_condition = self.action_type == 'macro_action' and self.timestep == self.timesteps
-        joints_sequence_condition = self.action_type == 'joints_sequence' and self.timestep == self.timesteps
-
-        if self.timestep < self.timesteps or macro_action_condition or joints_sequence_condition:
+        if self.timestep < self.timesteps:
             step_type = 0
             discount = 1
         else:
