@@ -366,6 +366,26 @@ class RLREALRobotEnv(REALRobotEnv):
             self.goal.final_state[obj] = self.goal.final_state[obj][:3]
 
 
+def plotActionDistribution(actor_net, t=0, seed=np.random.randint(10000)):
+    fig, axes = plt.subplots(3, 5)
+    fig.subplots_adjust(wspace=0.025, hspace=0.05)
+    for i_x, x_start in enumerate([-0.2, -0.1, 0]):
+        for i_y, y_start in enumerate([-0.4, -0.2, 0.0, 0.2, 0.4]):
+            #goal = c_env.goal.final_state['cube']
+            goal = np.array([-0.20357549,  0.32131456,  0.32118977])
+            start = np.array([x_start, y_start,  0.32118977])
+            azione = actor_net(np.array(start, dtype='float32').reshape(3,), step_type=(), network_state=())
+            allActions = np.vstack([azione[0].sample().numpy() for _ in range(300)])
+            axes[i_x, i_y].scatter(allActions[:,1], allActions[:,0], marker='o')
+            axes[i_x, i_y].scatter(allActions[:,3], allActions[:,2], marker='x')
+            axes[i_x, i_y].scatter(start[1], start[0], marker='o', color='red')
+            axes[i_x, i_y].scatter(goal[1], goal[0], marker='o', color='green')
+            axes[i_x, i_y].set_aspect('equal', adjustable='box')
+            axes[i_x, i_y].invert_xaxis()
+    fig.suptitle(str(t))
+    plt.savefig(f'actions_{t}_{seed}.png')
+
+
 #action_type = "joints"
 action_type = "macro_action"
 #action_type = "joints_sequence"
@@ -616,6 +636,9 @@ for it in range(num_iterations):
 
   if log_interval and step % log_interval == 0:
     print('step = {0}: loss = {1}'.format(step, loss_info.loss.numpy()))
+
+  if step == 1 or step % 500 == 0:
+    plotActionDistribution(actor_net, t=step, seed=seed)
 
 rb_observer.close()
 reverb_server.stop()
