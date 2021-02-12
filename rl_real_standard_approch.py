@@ -374,8 +374,8 @@ def plotActionDistribution(actor_net, t=0, seed=np.random.randint(10000)):
             #goal = c_env.goal.final_state['cube']
             goal = np.array([-0.20357549,  0.32131456,  0.32118977])
             start = np.array([x_start, y_start,  0.32118977])
-            azione = actor_net(np.array(start, dtype='float32').reshape(3,), step_type=(), network_state=())
-            allActions = np.vstack([azione[0].sample().numpy() for _ in range(300)])
+            actionDistribution = actor_net(np.tile(np.array(start, dtype='float32').reshape(3,),(300,1)), step_type=(), network_state=())
+            allActions = actionDistribution[0].sample().numpy()
             axes[i_x, i_y].scatter(allActions[:,1], allActions[:,0], marker='o')
             axes[i_x, i_y].scatter(allActions[:,3], allActions[:,2], marker='x')
             axes[i_x, i_y].scatter(start[1], start[0], marker='o', color='red')
@@ -390,8 +390,8 @@ def plotActionDistribution(actor_net, t=0, seed=np.random.randint(10000)):
 action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 1000
-num_episodes = 15000
+timesteps = 10000
+num_episodes = 1500
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
 # 1e5 is just so this doesn't take too long (1 hr)
