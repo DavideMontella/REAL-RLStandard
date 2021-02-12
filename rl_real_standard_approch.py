@@ -379,7 +379,7 @@ num_iterations = timesteps * num_episodes  # @param {type:"integer"}
 
 initial_collect_steps = 10000 # @param {type:"integer"}
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
-replay_buffer_capacity = 10000 # @param {type:"integer"}
+replay_buffer_capacity = 100000 # @param {type:"integer"}
 
 batch_size = 256 # @param {type:"integer"}
 
