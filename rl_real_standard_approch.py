@@ -370,8 +370,8 @@ class RLREALRobotEnv(REALRobotEnv):
 action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 5000
-num_episodes = 3000
+timesteps = 1000
+num_episodes = 15000
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
 # 1e5 is just so this doesn't take too long (1 hr)
