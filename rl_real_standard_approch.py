@@ -390,8 +390,8 @@ def plotActionDistribution(actor_net, t=0, seed=np.random.randint(10000)):
 action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 10000
-num_episodes = 1500
+timesteps = 1000
+num_episodes = 15000
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
 # 1e5 is just so this doesn't take too long (1 hr)
