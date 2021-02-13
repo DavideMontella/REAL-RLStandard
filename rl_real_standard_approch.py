@@ -383,7 +383,7 @@ def plotActionDistribution(actor_net, t=0, seed=np.random.randint(10000)):
             axes[i_x, i_y].set_aspect('equal', adjustable='box')
             axes[i_x, i_y].invert_xaxis()
     fig.suptitle(str(t))
-    plt.savefig(f'actions_{t}_{seed}.png')
+    plt.savefig(f'actions_{seed}_{t}.png')
     plt.close()
 
 #action_type = "joints"
