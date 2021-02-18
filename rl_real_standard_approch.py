@@ -264,7 +264,6 @@ class RLREALRobotEnv(REALRobotEnv):
 
 
     def new_step(self, action, render=False):
-        action = np.array([0, -0.1, -0.10, 0.26]) #+ np.random.rand(4)*0.05 - 0.025
 
         if self.action_type == "joints":
             joints_position = self.get_observation()['joint_positions']
@@ -391,8 +390,8 @@ def plotActionDistribution(actor_net, t=0, seed=np.random.randint(10000)):
 action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 10000
-num_episodes = 1500
+timesteps = 1000
+num_episodes = 15000
 
 # Use "num_iterations = 1e6" for better results (2 hrs)
 # 1e5 is just so this doesn't take too long (1 hr)
@@ -446,7 +445,29 @@ goal = goals['arr_0'][goal_idx] #start position near from goal position (20 cm)
 
 c_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
 e_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
-#e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
+e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
+
+if True:
+    def env_func(x):
+        e_env.reset()
+        obs = e_env.step(x)
+        return -obs[1]
+
+    from scipy.optimize import minimize
+    from scipy.optimize import Bounds
+    bounds = Bounds([-0.2, -0.5, -0.2, -0.5], [0.05, 0.5, 0.05, 0.5])
+    bounds2 = ([-0.2, 0.05], [-0.5, 0.5],[-0.2, 0.05], [-0.5, 0.5])
+    x0 = np.array([0, -0.1, -0.1, 0.25])
+
+    #res = minimize(env_func, x0, method='powell',  options={'xatol': 1e-8, 'disp': True},bounds=bounds)
+    from scipy import optimize
+    results = dict()
+    #results['shgo'] = optimize.shgo(env_func, bounds2)
+    results['DE'] = optimize.differential_evolution(env_func, bounds2)
+    print(results)
+    import sys
+    sys.exit(0)
+
 e_env = DataCollectorDecorator(e_env, 20)
 
 collect_env = gym_wrapper.GymWrapper(c_env)
