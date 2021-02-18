@@ -264,6 +264,7 @@ class RLREALRobotEnv(REALRobotEnv):
 
 
     def new_step(self, action, render=False):
+        action = np.array([0, -0.1, -0.10, 0.26]) #+ np.random.rand(4)*0.05 - 0.025
 
         if self.action_type == "joints":
             joints_position = self.get_observation()['joint_positions']
