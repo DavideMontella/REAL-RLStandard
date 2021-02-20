@@ -401,7 +401,7 @@ initial_collect_steps = 10000 # @param {type:"integer"}
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
 replay_buffer_capacity = 100000 # @param {type:"integer"}
 
-batch_size = 1024 # @param {type:"integer"}
+batch_size = 256# @param {type:"integer"}
 
 critic_learning_rate = 3e-4 # @param {type:"number"}
 actor_learning_rate = 3e-4 # @param {type:"number"}
@@ -508,7 +508,7 @@ table_name = 'uniform_table'
 table = reverb.Table(
     table_name,
     max_size=replay_buffer_capacity,
-    sampler=reverb.selectors.Uniform(),
+    sampler=reverb.selectors.MaxHeap(),
     remover=reverb.selectors.Fifo(),
     rate_limiter=reverb.rate_limiters.MinSize(1))
 
