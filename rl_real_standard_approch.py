@@ -412,7 +412,7 @@ gamma = 0.99 # @param {type:"number"}
 reward_scale_factor = 1000.0 # @param {type:"number"}
 
 actor_fc_layer_params = (256, 256)
-critic_joint_fc_layer_params = (256, 256)
+critic_joint_fc_layer_params = (512, 256, 64)
 
 log_interval = 20000 # @param {type:"integer"}
 
@@ -445,29 +445,7 @@ goal = goals['arr_0'][goal_idx] #start position near from goal position (20 cm)
 
 c_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
 e_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
-e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
-
-if True:
-    def env_func(x):
-        e_env.reset()
-        obs = e_env.step(x)
-        return -obs[1]
-
-    from scipy.optimize import minimize
-    from scipy.optimize import Bounds
-    bounds = Bounds([-0.2, -0.5, -0.2, -0.5], [0.05, 0.5, 0.05, 0.5])
-    bounds2 = ([-0.2, 0.05], [-0.5, 0.5],[-0.2, 0.05], [-0.5, 0.5])
-    x0 = np.array([0, -0.1, -0.1, 0.25])
-
-    #res = minimize(env_func, x0, method='powell',  options={'xatol': 1e-8, 'disp': True},bounds=bounds)
-    from scipy import optimize
-    results = dict()
-    #results['shgo'] = optimize.shgo(env_func, bounds2)
-    results['DE'] = optimize.differential_evolution(env_func, bounds2)
-    print(results)
-    import sys
-    sys.exit(0)
-
+#e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
 e_env = DataCollectorDecorator(e_env, 20)
 
 collect_env = gym_wrapper.GymWrapper(c_env)
