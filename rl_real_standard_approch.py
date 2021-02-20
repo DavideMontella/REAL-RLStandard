@@ -399,9 +399,9 @@ num_iterations = timesteps * num_episodes  # @param {type:"integer"}
 
 initial_collect_steps = 10000 # @param {type:"integer"}
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
-replay_buffer_capacity = 3000 # @param {type:"integer"}
+replay_buffer_capacity = 100000 # @param {type:"integer"}
 
-batch_size = 256 # @param {type:"integer"}
+batch_size = 1024 # @param {type:"integer"}
 
 critic_learning_rate = 3e-4 # @param {type:"number"}
 actor_learning_rate = 3e-4 # @param {type:"number"}
