@@ -399,7 +399,7 @@ num_iterations = timesteps * num_episodes  # @param {type:"integer"}
 
 initial_collect_steps = 10000 # @param {type:"integer"}
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
-replay_buffer_capacity = 100000 # @param {type:"integer"}
+replay_buffer_capacity = 3000 # @param {type:"integer"}
 
 batch_size = 256 # @param {type:"integer"}
 
@@ -412,7 +412,7 @@ gamma = 0.99 # @param {type:"number"}
 reward_scale_factor = 1000.0 # @param {type:"number"}
 
 actor_fc_layer_params = (256, 256)
-critic_joint_fc_layer_params = (512, 256, 64)
+critic_joint_fc_layer_params = (256, 256)
 
 log_interval = 20000 # @param {type:"integer"}
 
