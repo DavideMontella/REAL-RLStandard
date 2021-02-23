@@ -399,7 +399,7 @@ num_iterations = timesteps * num_episodes  # @param {type:"integer"}
 
 initial_collect_steps = 10000 # @param {type:"integer"}
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
-replay_buffer_capacity = 3000 # @param {type:"integer"}
+replay_buffer_capacity = 100000 # @param {type:"integer"}
 
 batch_size = 256# @param {type:"integer"}
 
@@ -409,7 +409,7 @@ alpha_learning_rate = 3e-4 # @param {type:"number"}
 target_update_tau = 0.005 # @param {type:"number"}
 target_update_period = 1 # @param {type:"number"}
 gamma = 0.99 # @param {type:"number"}
-reward_scale_factor = 1000.0 # @param {type:"number"}
+reward_scale_factor = 1.0 # @param {type:"number"}
 
 actor_fc_layer_params = (256, 256)
 critic_joint_fc_layer_params = (256, 256)
@@ -509,7 +509,7 @@ table = reverb.Table(
     table_name,
     max_size=replay_buffer_capacity,
     sampler=reverb.selectors.Uniform(),
-    remover=reverb.selectors.MinHeap(),
+    remover=reverb.selectors.Fifo(),
     rate_limiter=reverb.rate_limiters.MinSize(1))
 
 reverb_server = reverb.Server([table])
