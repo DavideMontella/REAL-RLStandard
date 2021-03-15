@@ -429,16 +429,15 @@ class RLREALRobotEnv(REALRobotEnv):
 
     def set_goal(self, goal):
         self.goal = goal
-        self.reward_func = self.new_reward_func
 
 action_type = "joints"
-#action_type = "macro_action"
+action_type = "macro_action"
 #action_type = "joints_sequence"
 
 goal_conditioned = True
 attractive_reward = False
 offline_learning = 20
-all_goals = True
+all_goals = False
 
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
 replay_buffer_capacity = 10000 # @param {type:"integer"}
@@ -462,7 +461,7 @@ epochs_eval_interval = 200
 num_episodes = 150000
 
 if action_type == "macro_action":
-    timesteps = 2000
+    timesteps = 10000
     actions_length = 1000
     actions_for_eps = int(timesteps / actions_length)
     num_iterations = num_episodes * actions_for_eps
