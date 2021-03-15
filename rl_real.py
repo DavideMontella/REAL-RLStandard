@@ -90,7 +90,7 @@ class RandomExploreAgent():
 import time
 import cv2
 seed = np.random.randint(10000)
-path_save_folder = "Simulation_pos_reward_macro_action_test"
+path_save_folder = "Simulation_5_obs_prior_sampling_joints"
 from pathlib import Path
 Path(path_save_folder).mkdir(parents=True, exist_ok=True)
 
@@ -194,7 +194,8 @@ args:
     **kwargs: args for the REALRobotEnv
 '''
 class RLREALRobotEnv(REALRobotEnv):
-    def __init__(self, timesteps=1000, goal=None, joints_observations_history_length=5, slowed_actions=True, attractive_reward=False, **kwargs):
+    def __init__(self, timesteps=1000, goal=None, joints_observations_history_length=5, slowed_actions=True,
+                                       attractive_reward=False, goal_conditioned=False, **kwargs):
 
         self.action_type = kwargs["action_type"]
 
@@ -210,10 +211,18 @@ class RLREALRobotEnv(REALRobotEnv):
 
         self.timesteps = timesteps
 
-        high = np.array([np.finfo(np.float32).max,
+        obj_space = np.array([np.finfo(np.float32).max,
                                       np.finfo(np.float32).max,
                                       np.finfo(np.float32).max]*kwargs['objects'])
 
+        self.goal_conditioned = goal_conditioned
+        if goal_conditioned:
+            goal_space = np.array([np.finfo(np.float32).max,
+                                      np.finfo(np.float32).max,
+                                      np.finfo(np.float32).max]*kwargs['objects'])
+
+        low = []
+        high = []
 
         if self.action_type == "joints":
 
@@ -226,9 +235,9 @@ class RLREALRobotEnv(REALRobotEnv):
             joints_history_space_low = list(self.action_space.low) * self.joints_observations_history_length
             joints_history_space_high = list(self.action_space.high) * self.joints_observations_history_length
 
-            self.observation_space = gym.spaces.Box(low=np.concatenate([joints_history_space_low, -high]),
-                                           high=np.concatenate([joints_history_space_high, high]),
-                                           dtype=np.float32)
+            low = np.concatenate([low, joints_history_space_low])
+            high = np.concatenate([high, joints_history_space_high])
+
         elif self.action_type == "joints_sequence":
 
             sequence_len = 8
@@ -237,19 +246,40 @@ class RLREALRobotEnv(REALRobotEnv):
 
             self.action_space = gym.spaces.Box(low=np.array(action_space_low), high=np.array(action_space_high), dtype=np.float32)
 
-            self.observation_space = gym.spaces.Box(low=-high, high=high, dtype=np.float32)
-
         else:
             self.action_space = gym.spaces.Box(low=self.action_space['macro_action'].low.flatten(),
                                            high=self.action_space['macro_action'].high.flatten(),
                                            dtype=np.float32)
 
-            self.observation_space = gym.spaces.Box(low=-high, high=high, dtype=np.float32)
+        low = np.concatenate([low, -obj_space])
+        high = np.concatenate([high, obj_space])
 
+
+        if goal_conditioned:
+            low = np.concatenate([low, -goal_space])
+            high = np.concatenate([high, goal_space])
+
+        self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
+
+        def objects_information_extraction(observation):
+            if goal_conditioned:
+                obj_inf = observation[-len(obj_space)-len(goal_space):-len(goal_space)]
+            else:
+                obj_inf = observation[-len(obj_space):]
+            len_inf_for_each_obj = int(len(obj_inf) / kwargs['objects'])
+
+            obj_inf_dict = {}
+            for idx, key in enumerate(self.robot.used_objects[1:]):
+                true_idx = idx * len_inf_for_each_obj
+                obj_inf_dict[key] = obj_inf[true_idx : true_idx + len_inf_for_each_obj]
+
+            return obj_inf_dict
+
+        self.obj_inf_extractor = objects_information_extraction
 
         print("##########OBSERVATIONS SPACE############")
         print(self.observation_space)
-        print("#################################")
+        print("########################################")
 
         super().reset()
 
@@ -260,9 +290,10 @@ class RLREALRobotEnv(REALRobotEnv):
         self.reward_func = self.new_reward_func
         self.attractive_reward = attractive_reward
 
-        self.episode = -1
+        self.ended_episodes = 0
 
         self.slowed_actions = slowed_actions
+
 
     def new_step(self, action, render=False):
 
@@ -295,38 +326,37 @@ class RLREALRobotEnv(REALRobotEnv):
                 for i in range(len(actions)-1):
                     observation = self.super_step({'joint_command': actions[i], 'render': False})
                 observation = self.super_step({'joint_command': actions[-1], 'render': render})
-            else:
-                observation = self.super_step({'joint_command': action[0:9], 'render': render})
 
         else:
             true_action = np.reshape(action,(2,2))
-            if self.timestep != self.timesteps:
-                for i in range(999):
-#                    print("true action: {}".format(true_action))
-                    observation = self.super_step({'macro_action': true_action, 'render': False})
-                observation = self.super_step({'macro_action': true_action, 'render': render})
-            else:
-                observation = self.super_step({'macro_action': true_action, 'render': render})
+            for i in range(999):
+                observation = self.super_step({'macro_action': true_action, 'render': False})
+            observation = self.super_step({'macro_action': true_action, 'render': render})
 
         objs_position = np.concatenate([observation[0]['object_positions'][key][:3] for key in observation[0]['object_positions']])
 
-        macro_action_condition = self.action_type == 'macro_action' and self.timestep == self.timesteps
-        joints_sequence_condition = self.action_type == 'joints_sequence' and self.timestep == self.timesteps
-
-        if self.timestep < self.timesteps or macro_action_condition or joints_sequence_condition:
+        if self.timestep < self.timesteps:
             step_type = 0
             discount = 1
+        elif (self.action_type == "joints_sequence" or self.action_type == "macro_action") and self.timesteps <= 1000:
+            step_type = 1
+            discount = 1
+            self.ended_episodes += 1
         else:
             step_type = 1
             discount = 0
+            self.ended_episodes += 1
 
         state = np.concatenate([joints_position, objs_position]) if self.action_type == "joints" else objs_position
+
+        if self.goal_conditioned:
+            goal = np.concatenate([self.goal.final_state[key][:3] for key in observation[0]['object_positions']])
+            state = np.concatenate([state, goal])
 
         return state, observation[1], step_type, discount
 
 
     def reset(self):
-        self.episode += 1
         observation = super().reset()
         self.reset_object_pose_for_goal()
 
@@ -339,12 +369,38 @@ class RLREALRobotEnv(REALRobotEnv):
 
         objs_position = np.concatenate([observation['object_positions'][key][:3] for key in observation['object_positions']])
 
+        state = np.concatenate([joints_position, objs_position]) if self.action_type == "joints" else objs_position
 
-        return np.concatenate([joints_position, objs_position]) if self.action_type == "joints" else objs_position
+        if self.goal_conditioned:
+            goal = np.concatenate([self.goal.final_state[key][:3] for key in observation['object_positions']])
+            state = np.concatenate([state, goal])
+
+        return state
+
+    def objects_reward(self, start_pos, goal_pos):
+        final_state = goal_pos
+        current_state = start_pos
+        score = 0
+        for obj in final_state.keys():
+            p = np.array(current_state[obj])
+            p_goal = np.array(final_state[obj][:3])
+            pos_dist = np.linalg.norm(p_goal-p)
+            # Score goes down to 0.25 within 10cm
+            pos_const = -np.log(0.25) / 0.10
+            pos_value = np.exp(- pos_const * pos_dist)
+            objScore = pos_value
+            # print("Object: {} Score: {:.4f}".format(obj,objScore))
+            score += objScore
+
+        # print("Goal score: {:.4f}".format(score))
+        return score
 
     def new_reward_func(self, observation):
-
         if self.timestep % 100 == 0 or self.timestep == 0:
+
+            if self.timestep == 0:
+                print(f"goal: {self.goal.initial_state}")
+
             print("evaluate value: {}".format(super().evaluateGoal()[1]))
 
         evaluate_value = super().evaluateGoal()[1]
@@ -371,19 +427,19 @@ class RLREALRobotEnv(REALRobotEnv):
         for obj in self.goal.final_state.keys():
             self.goal.final_state[obj] = self.goal.final_state[obj][:3]
 
+    def set_goal(self, goal):
+        self.goal = goal
+        self.reward_func = self.new_reward_func
 
 action_type = "joints"
 #action_type = "macro_action"
 #action_type = "joints_sequence"
 
-timesteps = 1000
-num_episodes = 1500
+goal_conditioned = True
+attractive_reward = False
+offline_learning = 20
+all_goals = True
 
-# Use "num_iterations = 1e6" for better results (2 hrs)
-# 1e5 is just so this doesn't take too long (1 hr)
-num_iterations = timesteps * num_episodes  # @param {type:"integer"}
-
-initial_collect_steps = 10000 # @param {type:"integer"}
 #collect_steps_per_iteration = timesteps # @param {type:"integer"}
 replay_buffer_capacity = 10000 # @param {type:"integer"}
 
@@ -400,39 +456,50 @@ reward_scale_factor = 1.0 # @param {type:"number"}
 actor_fc_layer_params = (256, 256)
 critic_joint_fc_layer_params = (256, 256)
 
-log_interval = 20000 # @param {type:"integer"}
-
-num_eval_episodes = 20 # @param {type:"integer"}
-eval_interval = 100*timesteps # @param {type:"integer"}
-
 policy_save_interval = 20000 # @param {type:"integer"}
 
+epochs_eval_interval = 200
+num_episodes = 150000
+
 if action_type == "macro_action":
-    num_iterations = num_episodes * (int(timesteps/1000) + 1)
-    initial_collect_steps = int(initial_collect_steps / 1000)
-#    collect_steps_per_iteration = int(collect_steps_per_iteration / 1000)
-#    collect_steps_per_iteration += 1
-    log_interval = int(log_interval / 1000)
-    eval_interval = int(eval_interval / 1000)
-    policy_save_interval = int(policy_save_interval / 1000)
+    timesteps = 2000
+    actions_length = 1000
+    actions_for_eps = int(timesteps / actions_length)
+    num_iterations = num_episodes * actions_for_eps
+    initial_collect_steps = 20 * actions_for_eps
+    log_interval = epochs_eval_interval * actions_for_eps
+    eval_interval = epochs_eval_interval * actions_for_eps
+    num_eval_episodes = 20
+
 elif action_type == "joints_sequence":
-    num_iterations = num_episodes * (int(timesteps/800) + 1)
-    initial_collect_steps = int(initial_collect_steps / 800)
-#    collect_steps_per_iteration = int(collect_steps_per_iteration / 800)
-#    collect_steps_per_iteration += 1
-    log_interval = int(log_interval / 800)
-    eval_interval = int(eval_interval / 800)
-    policy_save_interval = int(policy_save_interval / 800)
+    timesteps = 800
+    actions_length = 100
+    actions_for_eps = int(timesteps / actions_length)
+    num_iterations = num_episodes * actions_for_eps
+    initial_collect_steps = 20 * actions_for_eps
+    log_interval = epochs_eval_interval * actions_for_eps
+    eval_interval = epochs_eval_interval * actions_for_eps
+    num_eval_episodes = 20
 
-goals = np.load("goals-REAL2020-s2020-25-15-10-1.npy.npz", allow_pickle=True)
+elif action_type == "joints":
+    timesteps = 1000
+    actions_length = 100
+    actions_for_eps = int(timesteps / actions_length)
+    num_iterations = num_episodes * actions_for_eps
+    initial_collect_steps = 20 * actions_for_eps
+    log_interval = epochs_eval_interval * actions_for_eps
+    eval_interval = epochs_eval_interval * actions_for_eps
+    num_eval_episodes = 25
+
+goals = np.load("goals-REAL2020-s2020-25-15-10-1.npy.npz", allow_pickle=True)['arr_0']
 goal_idx = 7
-goal = goals['arr_0'][goal_idx] #start position near from goal position (20 cm)
+goal = goals[goal_idx] #start position near from goal position (20 cm)
 
 
-c_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
-e_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type)
-e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
-#e_env = DataCollectorDecorator(e_env, 20)
+c_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type, goal_conditioned=goal_conditioned, attractive_reward=attractive_reward)
+e_env = RLREALRobotEnv(timesteps=timesteps, goal=goal, render=False, objects=1, action_type=action_type, goal_conditioned=goal_conditioned, attractive_reward=attractive_reward)
+#e_env = DataCollectorDecorator(VideoDecorator(e_env, 50), 20)
+e_env = DataCollectorDecorator(e_env, 20)
 
 
 collect_env = gym_wrapper.GymWrapper(c_env)
@@ -498,6 +565,7 @@ table_name = 'uniform_table'
 table = reverb.Table(
     table_name,
     max_size=replay_buffer_capacity,
+#    sampler=reverb.selectors.Prioritized(0.8),
     sampler=reverb.selectors.Uniform(),
     remover=reverb.selectors.Fifo(),
     rate_limiter=reverb.rate_limiters.MinSize(1))
@@ -512,6 +580,7 @@ reverb_replay = reverb_replay_buffer.ReverbReplayBuffer(
 
 dataset = reverb_replay.as_dataset(
       sample_batch_size=batch_size, num_steps=2).prefetch(50)
+
 experience_dataset_fn = lambda: dataset
 
 tf_eval_policy = tf_agent.policy
@@ -531,14 +600,19 @@ rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
   sequence_length=2,
   stride_length=1)
 
+observations_list = []
+next_states_list = []
 
 
-def collector(policy, env, max_steps, observers, max_episodes=0):
+def collector(policy, env, max_steps, observers, max_episodes=0, all_goals=False, policy_state=None, time_step=None):
     max_steps = max_steps or np.inf
     max_episodes = max_episodes or np.inf
 
-    time_step = env._current_time_step
-    policy_state = policy.get_initial_state(env.batch_size or 1)
+    if max_episodes:
+        time_step = env._current_time_step
+        policy_state = policy.get_initial_state(env.batch_size or 1)
+
+    goal_idx = 7
 
     num_steps = 0
     num_episodes = 0
@@ -547,14 +621,58 @@ def collector(policy, env, max_steps, observers, max_episodes=0):
         next_time_step = env.step(action_step.action)
 
         traj = trajectory.from_transition(time_step, action_step, next_time_step)
+
+#        print("Traj: {}".format(traj.observation))
+#        exit(0)
+
         for observer in observers:
             observer(traj)
 
-        num_episodes += np.sum(traj.is_boundary())
-        num_steps += np.sum(~traj.is_boundary())
+        print(next_time_step.step_type)
 
-        time_step = next_time_step
-        policy_state = action_step.state
+#        if env.ended_episodes == 2:
+#            exit(0)
+
+        observations_list.append(traj)
+        next_states_list.append(next_time_step)
+
+        end_episode = next_time_step.step_type == 2
+        ####sobstituion of traj.is_boundary() with end_episode
+
+        if all_goals and end_episode and max_episodes:
+            goal_idx = (goal_idx + 1) % 25
+            env.set_goal(goals[goal_idx])
+            print(f"collector goal: {env.goal.initial_state}")
+            print(f"{goal_idx}-th goals")
+
+
+
+        num_episodes += end_episode
+        if action_type == 'macro_action':
+            num_steps += 1
+        num_steps += ~end_episode
+
+        if end_episode:
+            reset_obs = env.step(action_step.action)
+
+            #in the case there will be another loop iteration
+            if num_steps < max_steps and num_episodes < max_episodes:
+                time_step = env._current_time_step
+                policy_state = policy.get_initial_state(env.batch_size or 1)
+
+            else:
+                time_step = next_time_step
+                policy_state = action_step.state
+
+        else:
+            time_step = next_time_step
+            policy_state = action_step.state
+
+
+    if all_goals and end_episode and max_episodes:
+        e_env.goal = goals[7]
+        print("Finish with {}-th goals".format(goal_idx))
+
 
     return time_step, policy_state
 
@@ -562,19 +680,24 @@ time_step, policy_state = collector(random_policy, collect_env, initial_collect_
 
 env_step_metric = py_metrics.EnvironmentSteps()
 
-
+#observations_list = []
+#list_append = observations_list.append
 
 collect_observers = [rb_observer, env_step_metric]
 collect_metrics = [
                       py_metrics.NumberOfEpisodes(),
                       py_metrics.EnvironmentSteps(),
-                      py_metrics.AverageReturnMetric(buffer_size=10),
+                      py_metrics.AverageReturnMetric(buffer_size=num_eval_episodes),
                       py_metrics.AverageEpisodeLengthMetric(buffer_size=10),
                   ]
+
+print("######collect metrics######")
+print(collect_metrics)
+
 collect_observers.extend(collect_metrics)
 reference_metrics = []
 # Make sure metrics are not repeated.
-collect_observers = list(set(collect_observers))
+collect_observers = list(set(collect_observers)) 
 
 #pronto all'uso per exploration:
 #time_step, policy_state = collector(tf_collect_policy, collect_env, 1, collect_observers)
@@ -597,7 +720,7 @@ eval_observers = list(set(eval_observers))
 
 
 import shutil
-shutil.rmtree("/tmp/train")
+shutil.rmtree("/tmp/train", ignore_errors=True)
 
 saved_model_dir = os.path.join(tempdir, learner.POLICY_SAVED_MODEL_DIR)
 
@@ -611,16 +734,66 @@ learning_triggers = [
     triggers.StepPerSecondLogTrigger(train_step, interval=1000),
 ]
 
+'''
 agent_learner = learner.Learner(
   tempdir,
   train_step,
   tf_agent,
   experience_dataset_fn,
   triggers=learning_triggers)
+'''
+##################### learner initialization
 
-def get_eval_metrics():
+checkpoint_interval = 100000
+
+_train_dir = os.path.join(tempdir, 'train')
+train_summary_writer = tf.compat.v2.summary.create_file_writer(
+                               _train_dir, flush_millis=10000)
+
+summary_interval=1000,
+max_checkpoints_to_keep=3
+train_step = train_step
+_agent = tf_agent
+use_kwargs_in_agent_train = False
+strategy = tf.distribute.get_strategy()
+
+if experience_dataset_fn:
+    with strategy.scope():
+        dataset = strategy.experimental_distribute_datasets_from_function(
+                                                         lambda _: experience_dataset_fn())
+        _experience_iterator = iter(dataset)
+
+after_train_strategy_step_fn = None
+triggers = learning_triggers
+
+# Prevent autograph from going into the agent.
+_agent.train = tf.autograph.experimental.do_not_convert(tf_agent.train)
+
+
+from tf_agents.utils import common
+'''
+checkpoint_dir = os.path.join(_train_dir, 'checkpoints')
+with strategy.scope():
+    _agent.initialize()
+
+    _checkpointer = common.Checkpointer(
+      checkpoint_dir,
+      max_to_keep=max_checkpoints_to_keep,
+      agent=_agent,
+      train_step=train_step)
+    _checkpointer.initialize_or_restore()  # pytype: disable=attribute-error
+
+triggers.append(_get_checkpoint_trigger(checkpoint_interval))
+'''
+summary_interval = tf.constant(summary_interval, dtype=tf.int64)
+
+
+
+#####################
+
+def get_eval_metrics(all_goals=False):
   #eval_actor.run()
-  collector(tf_eval_policy, eval_env, 0, eval_observers, max_episodes=num_eval_episodes)
+  collector(tf_eval_policy, eval_env, 0, eval_observers, max_episodes=num_eval_episodes, all_goals=all_goals)
   results = {}
   for metric in eval_metrics:
     results[metric.name] = metric.result()
@@ -649,22 +822,130 @@ tf_agent.train_step_counter.assign(0)
 avg_return = get_eval_metrics()["AverageReturn"]
 returns = [avg_return]
 
+
+def relabel(traj, next_traj, goal):
+
+    next_pos = c_env.obj_inf_extractor(next_traj.observation)
+
+    new_reward = c_env.objects_reward(next_pos, goal)
+    goal_obs = np.concatenate([goal[key][:3] for key in goal])
+    observation = np.concatenate([traj.observation[:-len(goal_obs)], goal_obs])
+
+    new_traj = tf_agents.trajectories.trajectory.Trajectory(traj[0],observation,traj[2],traj[3],traj[4],np.float32(new_reward),traj[6])
+    return new_traj
+
+def single_train_step(iterator):
+    (experience, sample_info) = next(iterator)
+
+    if action_type == 'macro_action' and False:
+        gino = tf.convert_to_tensor(np.ones((256,2)), dtype=np.float32)
+
+        experience = tf_agents.trajectories.trajectory.Trajectory(experience.step_type,experience.observation,experience.action,
+                                                             experience.policy_info,experience.next_step_type,experience.reward,gino)
+
+    loss_info = strategy.run(_agent.train, args=(experience,))
+
+    return loss_info
+
+def _train(iterations, iterator):
+    assert iterations >= 1, (
+        'Iterations must be greater or equal to 1, was %d' % iterations)
+    # Call run explicitly once to get loss info shape for autograph. Because the
+    # for loop below will get converted to a `tf.while_loop` by autograph we
+    # need the shape of loss info to be well defined.
+    loss_info = single_train_step(iterator)
+
+    for _ in tf.range(iterations - 1):
+      loss_info = single_train_step(iterator)
+
+    def _reduce_loss(loss):
+      return strategy.reduce(tf.distribute.ReduceOp.SUM, loss, axis=None)
+
+    # We assume all data can be reduced in the loss_info. This means no
+    # string dtypes are currently allowed as LossInfo Fields.
+    reduced_loss_info = tf.nest.map_structure(_reduce_loss, loss_info)
+    return reduced_loss_info
+
+
+iterator = _experience_iterator
+
+def run(iterations=1):
+  def _summary_record_if():
+    return tf.math.equal(
+        train_step % tf.constant(summary_interval), 0)
+
+  with train_summary_writer.as_default(), \
+         common.soft_device_placement(), \
+         tf.compat.v2.summary.record_if(_summary_record_if), \
+         strategy.scope():
+    loss_info = _train(iterations, iterator)
+
+    train_step_val = train_step.numpy()
+    for trigger in triggers:
+      trigger(train_step_val)
+
+  return loss_info
+
+
+observations_list = []
+next_states_list = []
 for it in range(num_iterations):
+  assert len(observations_list) == len(next_states_list), "Dimensioni diverse dei obs_list e next_list"
+
   print("{}-th iteration Done!".format(it))
   # Training.
-  collector(tf_collect_policy, collect_env, 1, collect_observers)
-  loss_info = agent_learner.run(iterations=1)
+  time_step, policy_state = collector(tf_collect_policy, collect_env, 1, collect_observers, policy_state=policy_state, time_step=time_step)
+  
+  #loss_info = agent_learner.run(iterations=1)
+  ############################## training
+
+  loss_info = run(iterations=1)
+
+  ##############################
 
   # Evaluating.
-  step = agent_learner.train_step_numpy
+  #step = agent_learner.train_step_numpy
+  step = train_step.numpy()
 
-  if eval_interval and step % eval_interval == 0:
-    metrics = get_eval_metrics()
-    log_eval_metrics(step, metrics)
+  #if eval_interval and step % eval_interval == 0:
+  if eval_interval and it % eval_interval == 0:
+    metrics = get_eval_metrics(all_goals=all_goals)
+    log_eval_metrics(it, metrics)
     returns.append(metrics["AverageReturn"])
 
-  if log_interval and step % log_interval == 0:
+    observations_list = observations_list[num_eval_episodes * actions_for_eps:]
+    next_states_list = next_states_list[num_eval_episodes * actions_for_eps:]
+
+  if log_interval and it % log_interval == 0:
     print('step = {0}: loss = {1}'.format(step, loss_info.loss.numpy()))
+
+
+  if len(observations_list) > 10 and goal_conditioned:
+
+    if goal_conditioned:
+
+      goals = [ c_env.obj_inf_extractor(traj.observation) for traj in observations_list ]
+
+      for goal in goals:
+#        print("it: {}  len goals: {} Goal: {}".format(it, len(goals), goal))
+
+        relabeled_transitions = [ relabel(observations_list[i], next_states_list[i], goal)  for i in range(len(observations_list)) ]
+        for traj in relabeled_transitions:
+          for observer in collect_observers:
+            observer(traj)
+
+    if offline_learning:
+        #agent_learner.run(iterations=offline_learning)
+        loss_info = run(iterations=offline_learning)
+
+    observations_list = []
+    next_states_list = []
+  elif not goal_conditioned:
+
+    if offline_learning:
+      #agent_learner.run(iterations=offline_learning)
+      loss_info = run(iterations=offline_learning)
+
 
 rb_observer.close()
 reverb_server.stop()
@@ -677,4 +958,5 @@ plt.ylabel('Average Return')
 plt.xlabel('Step')
 plt.ylim()
 plt.savefig(path_save_folder + "/results{}_it{}".format(goal_idx, num_iterations))
+
 
