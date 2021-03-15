@@ -958,4 +958,5 @@ plt.xlabel('Step')
 plt.ylim()
 plt.savefig(path_save_folder + "/results{}_it{}".format(goal_idx, num_iterations))
 
+np.save(f'returns_{np.mean(returns)}_{np.max(returns)}', returns)
 
